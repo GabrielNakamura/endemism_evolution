@@ -1,0 +1,60 @@
+---
+format: gfm
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+<!-- Please do not edit .md document. Instead use .qmd -->
+
+# General overview
+
+This repository contains the data and code used in the analysis of the
+ongoing study entitled **"Evolutionary and biogeographic origins of endemism"**.
+
+# Context 
+
+
+# Repository structure
+
+## data
+
+This folder stores raw and processed data used to perform all the
+analysis presented in this study
+
+### raw
+
+
+### processed
+
+
+## R
+
+
+### functions
+
+## output
+
+### Figures
+
+
+#### Supp-material
+
+    
+# Authors
+
+Gabriel Nakamura, Arthur Rodrigues
+
+# Contact
+
+[Gabriel Nakamura](https://github.com/GabrielNakamura) and [Arthur Rodrigues](https://github.com/avrodrigues)
+
+If you have any suggestion or commentary, please open an issue
+
+# Session info
+
+```{r}
+#| echo: false
+#| eval: true
+sessionInfo()
+```
