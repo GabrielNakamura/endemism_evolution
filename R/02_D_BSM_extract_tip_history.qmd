@@ -1,0 +1,140 @@
+---
+title: "02 - Running Ancestral Area Reconstruction"
+subtitle: "02_D_ancestral_reconstruction.qmd"
+format: html
+eval: TRUE
+warning: false
+knitr: 
+  opts_chunk:
+    message: false
+---
+
+# Packages and data
+
+Libraries 
+
+```{r}
+require(Rcpp)
+require(RcppArmadillo)
+require(gdata)
+require(gtools)
+require(xtable)
+require(plotrix)
+require(vegan)
+require(FD)
+require(SparseM)
+require(ape)
+require(phylobase)
+require(rexpokit)
+require(cladoRcpp)
+library(optimx)
+library(snow)
+require(GenSA)
+require(fdrtool)
+require(MultinomialCI)
+```
+
+
+Reading and preparing phylogenetic and biogeographic files that will be used 
+    in biogeographic model
+
+```{r}
+library(BioGeoBEARS)
+library(Herodotools) # useful for some wrapping and auxiliary functions
+
+# Phylogenetic tree containing only species in the grid used
+phy_pruned <- ape::read.tree(here::here("data", "processed",
+                                        "Tree_TF400Howard_Pruned.tre"))
+
+# Phyllip (biogeographic occurrence) file needed for BioGeoBEARS analysis
+phyllip_file_birds <- BioGeoBEARS::read_PHYLIP_data(here::here("data", 
+                                                  "Phyllip_GeoAreas.txt"))
+path_phyllip_file_birds <- here::here("data", "Phyllip_GeoAreas.txt")
+
+# ranges for species needed for BioGeoBEARS analysis
+tipranges <- 
+  BioGeoBEARS::getranges_from_LagrangePHYLIP(lgdata_fn = path_phyllip_file_birds)
+
+# Set the maximum number of areas any species may occupy; this cannot be larger 
+# than the number of areas you set up, but it can be smaller.
+max_range_size = 3
+
+# To check the number of states for a given number of ranges, try:
+nstates <- cladoRcpp::numstates_from_numareas(numareas = 10, 
+                                              maxareas = 3,
+                                              include_null_range = TRUE)
+
+
+```
+
+# Setting up BioGeoBEARS for biogeographical reconstruction
+
+```{r}
+
+# First set up the Model
+# Intitialize a default model (DEC model)
+BioGeoBEARS_run_object = define_BioGeoBEARS_run()
+# Give BioGeoBEARS the location of the phylogeny Newick file
+BioGeoBEARS_run_object$trfn = here::here("data", "processed", "Tree_TF400Howard_Pruned.tre")
+# Give BioGeoBEARS the location of the geography text file
+BioGeoBEARS_run_object$geogfn = path_phyllip_file_birds
+# Input the maximum range size
+BioGeoBEARS_run_object$max_range_size = max_range_size
+# Min to treat tip as a direct ancestor (no speciation event)
+BioGeoBEARS_run_object$min_branchlength = 0.000001 
+# set to FALSE for e.g. DEC* model, DEC*+J, etc.
+BioGeoBEARS_run_object$include_null_range = TRUE 
+# Speed options and multicore processing if desired
+BioGeoBEARS_run_object$on_NaN_error = -1e50    # returns very low lnL if parameters produce NaN error (underflow check)
+BioGeoBEARS_run_object$speedup = TRUE          # shorcuts to speed ML search; use FALSE if worried (e.g. >3 params)
+BioGeoBEARS_run_object$use_optimx = TRUE    # if FALSE, use optim() instead of optimx()
+BioGeoBEARS_run_object$num_cores_to_use = 4
+
+# This function loads the dispersal multiplier matrix etc. from the text files into the model object. Required for these to work!
+# (It also runs some checks on these inputs for certain errors.)
+BioGeoBEARS_run_object = readfiles_BioGeoBEARS_run(BioGeoBEARS_run_object)
+# Good default settings to get ancestral states
+BioGeoBEARS_run_object$return_condlikes_table = TRUE
+BioGeoBEARS_run_object$calc_TTL_loglike_from_condlikes_table = TRUE
+BioGeoBEARS_run_object$calc_ancprobs = TRUE    # get ancestral states from optim run
+
+# Set up DEC model
+# Look at the BioGeoBEARS_run_object; it's just a list of settings etc.
+BioGeoBEARS_run_object
+# This contains the model object
+BioGeoBEARS_run_object$BioGeoBEARS_model_object
+# This table contains the parameters of the model 
+BioGeoBEARS_run_object$BioGeoBEARS_model_object@params_table
+# Run this to check inputs. Read the error messages if you get them!
+check_BioGeoBEARS_run(BioGeoBEARS_run_object)
+
+#### RUN DEC ####
+# For a slow analysis, run once, then set runslow=FALSE to just 
+# load the saved result.
+runslow = TRUE
+res_DEC <- bears_optim_run(BioGeoBEARS_run_object)
+saveRDS(res_DEC, here::here("output", "output_BioGeoBEARS", "model_DEC.rds"))
+```
+
+# Calculating BSM using DEC model
+
+Calculating Biogeographic stochastic mapping using DEC
+
+```{r}
+
+bsm_res_DEC <- 
+  Herodotools::calc_bsm(BioGeoBEARS.data = res_DEC,
+                        phyllip.file = path_phyllip_file_birds, 
+                        tree.path =  here::here("data", "processed", "Tree_TF400Howard_Pruned.tre"), 
+                        max.maps = 100, 
+                        n.maps.goal = 100,
+                        seed = 42)
+
+bsm_res_DEC$RES_clado_events_tables[[90]] |> View()
+lapply(bsm_res_DEC$RES_clado_events_tables, function(x) dim(x))
+
+
+```
+
+
+

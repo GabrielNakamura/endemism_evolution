@@ -80,7 +80,7 @@ tipranges
 max_range_size = 3
 #max_tipsize=3
 # To check the number of states for a given number of ranges, try:
-numstates_from_numareas(numareas=10, maxareas=3, include_null_range=TRUE)
+cladoRcpp::numstates_from_numareas(numareas=10, maxareas=3, include_null_range=TRUE)
 #################################################
 
 
@@ -91,7 +91,7 @@ numstates_from_numareas(numareas=10, maxareas=3, include_null_range=TRUE)
 # Intitialize a default model (DEC model)
 BioGeoBEARS_run_object = define_BioGeoBEARS_run()
 # Give BioGeoBEARS the location of the phylogeny Newick file
-BioGeoBEARS_run_object$trfn = trfn
+BioGeoBEARS_run_object$trfn = here::here("data", "processed", "Tree_TF400Howard_Pruned.tre")
 # Give BioGeoBEARS the location of the geography text file
 BioGeoBEARS_run_object$geogfn = geogfn
 # Input the maximum range size
@@ -127,20 +127,8 @@ check_BioGeoBEARS_run(BioGeoBEARS_run_object)
 # For a slow analysis, run once, then set runslow=FALSE to just 
 # load the saved result.
 runslow = TRUE
-resfn = "Alina_DEC_M0_unconstrained.Rdata"
-if (runslow)
-{
-  res = bears_optim_run(BioGeoBEARS_run_object)
-  res    
-  
-  save(res, file=resfn)
-  resDEC = res
-} else {
-  # Loads to "res"
-  load(resfn)
-  resDEC = res
-}
-save(resDEC,file="resDEC.RData")
+resfn = here::here("output_BioGeoBEARS", "DEC_M0_unconstrained.Rdata")
+res_DEC <- bears_optim_run(BioGeoBEARS_run_object)
 
 
 #################################################

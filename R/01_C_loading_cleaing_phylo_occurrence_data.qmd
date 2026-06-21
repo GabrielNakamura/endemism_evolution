@@ -1,0 +1,98 @@
+---
+title: "01 - Phylogenetic data preparation"
+subtitle: "01_D_phylo_data_preparation.qmd"
+format: html
+eval: TRUE
+warning: false
+knitr: 
+  opts_chunk:
+    message: false
+---
+
+# Packages and data 
+
+```{r}
+library(BioGeoBEARS)
+library(Rcpp)
+library(Herodotools)
+```
+
+
+
+## Phylogeny
+
+Reading packages and data needed. The phylogenetic data is from 
+    [Harvey et al](https://www.science.org/doi/10.1126/science.aaz6970) comprising
+    1283 species of suboscine passerines. There is another phylogeny with more 
+    species from [McTavish et al (2025)](https://www.pnas.org/doi/10.1073/pnas.2409658122)
+
+```{r}
+phy <-  ape::read.tree(here::here("data", "T400F_AOS_HowardMoore.tre"))
+spp_codes <- read.csv(here::here("data", "Species_name_map_uids.csv")) 
+names_tipHoward <- spp_codes[match(phy$tip.label, spp_codes$tipnamecodes), 
+                             "aos.howardmoore.species"]
+phy$tip.label <- names_tipHoward
+names_tipHoward_matchW <- 
+  unlist(lapply(strsplit(phy$tip.label, " "),
+                function(x) paste(x[1], x[2], sep = "_")
+  )
+  )
+phy$tip.label <- names_tipHoward_matchW
+
+```
+
+## Occurrence matrix
+
+<!-- Check why there are so many substitution in Harvey tree -->
+
+```{r}
+W <- read.table(here::here("data", "matrixW.txt")) # incidence matrix
+
+W_edit <- W[, - match(c("Zimmerius_improbus", "Phylloscartes_flaviventris",
+                        "Phelpsia_inornatus"), colnames(W))]
+W_edit_sub <- W_edit[, match(c("Suiriri_islerorum", "Anairetes_agraphia",
+                               "Anairetes_agilis"), colnames(W_edit))]
+colnames(W_edit_sub) <- c("Suiriri_affinis", "Uromyias_agraphia", "Uromyias_agilis") 
+W_edit <- W_edit[, - match(c("Suiriri_islerorum", "Anairetes_agraphia", 
+                             "Anairetes_agilis"), colnames(W_edit))]
+W_edit <- cbind(W_edit, W_edit_sub)
+Onychorhynchus_coronatus <- ifelse(rowSums(W_edit[, 
+                                                  match(c("Onychorhynchus_coronatus",
+                                                          "Onychorhynchus_swainsoni",
+                                                          "Onychorhynchus_mexicanus",
+                                                          "Onychorhynchus_occidentalis"), 
+                                                        colnames(W_edit))]) >= 1, 1, 0)
+W_edit <- W_edit[, - match(c("Onychorhynchus_coronatus", 
+                             "Onychorhynchus_swainsoni", 
+                             "Onychorhynchus_mexicanus", 
+                             "Onychorhynchus_occidentalis"), 
+                           colnames(W_edit))]
+W_edit <- cbind(W_edit, Onychorhynchus_coronatus)
+Xolmis_rubetra <- ifelse(rowSums(W_edit[, match(c("Xolmis_salinarum",
+                                                  "Xolmis_rubetra"),
+                                                colnames(W_edit))]) >= 1, 1, 0)
+W_edit <- W_edit[, - match(c("Xolmis_salinarum", "Xolmis_rubetra"), colnames(W_edit))]
+W_edit <- cbind(W_edit, Xolmis_rubetra) 
+colnames(W_edit)[which(is.na(match(colnames(W_edit), tr$tip.label)) == TRUE)] # checking
+W_edit # final matrix to be used with Harvey tree
+```
+
+# Saving processed data
+
+<!-- Check why there are so many stray files in this chunk code -->
+
+```{r}
+# saving results ----------------------------------------------------------
+
+ct <- geiger::treedata(tr, geofile)
+ct.tr<-ct$phy
+write.tree(ct.tr,file="Tree_TF400Howard_Pruned.tre")
+trfn = np(paste("Tree_TF400Howard_Pruned.tre", sep=""))
+moref(trfn)
+tr = ape::read.tree(here::here("data", trfn))
+write.tree(tr,file="Tree_TF400Howard_tip_corrected.tre")
+trfn = np(paste("Tree_TF400Howard_tip_corrected.tre", sep=""))
+write.table(W_edit, here::here("data", "processed", "W_harvey.txt"))
+
+```
+
