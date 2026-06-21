@@ -1,8 +1,11 @@
 {
   "name": "RStudio Environment",
   "image": "rocker/rstudio:latest",
-  "containerUser": "root",
-  "remoteUser": "root",
+  "features": {
+    "ghcr.io/rocker-org/devcontainer-features/rstudio-server:1": {
+      "version": "latest"
+    }
+  },
   "forwardPorts": [8787],
   "portsAttributes": {
     "8787": {
@@ -11,5 +14,5 @@
       "visibility": "public"
     }
   },
-  "postCreateCommand": "if [ -f install.R ]; then Rscript install.R; fi"
+  "postCreateCommand": "if [ -f install_packages.R ]; then Rscript install_packages.R; fi"
 }
