@@ -1,0 +1,13 @@
+{
+  "name": "R Automated Environment",
+  "image": "rocker/rstudio:latest", 
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "REditorSupport.r"
+      ]
+    }
+  },
+  "forwardPorts":,
+  "postCreateCommand": "Rscript install_packages.R"
+}
