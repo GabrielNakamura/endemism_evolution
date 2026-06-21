@@ -1,16 +1,14 @@
 {
   "name": "RStudio Environment",
   "image": "rocker/rstudio:latest",
-  "customizations": {
-    "codespaces": {
-      "openFiles": []
-    }
-  },
+  "containerUser": "root",
+  "remoteUser": "root",
   "forwardPorts": [8787],
   "portsAttributes": {
     "8787": {
       "label": "RStudio Server",
-      "onAutoForward": "openBrowser"
+      "onAutoForward": "openBrowser",
+      "visibility": "public"
     }
   },
   "postCreateCommand": "if [ -f install.R ]; then Rscript install.R; fi"
