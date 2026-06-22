@@ -28,116 +28,15 @@ bsm_res_DEC <-
                         n.maps.goal = 100,
                         seed = 42)
 
+# saving bsm 
+saveRDS(bsm_res_DEC, 
+        here::here("output", "output_BioGeoBEARS", "bsm_res_DEC.rds"))
 
 
-BSMs_w_sourceAreas <- 
-  simulate_source_areas_ana_clado(res_DEC, 
-                                  bsm_res_DEC$RES_clado_events_tables, 
-                                  bsm_res_DEC$RES_ana_events_tables, 
-                                  names(tipranges@df))
+# Using functions from Herodotools to insert nodes and calculate some PE
 
-# Simulated anagenetic and cladogenetic events 
-ana_events_tables <- BSMs_w_sourceAreas$ana_events_tables
-clado_events_tables <- BSMs_w_sourceAreas$clado_events_tables
-
-# count the number of events
-n_events <- 
-  count_ana_clado_events(clado_events_tables, 
-                         ana_events_tables, 
-                         names(tipranges@df), 
-                         names(tipranges@df))
-
-
-all_counts_events <- n_events$summary_counts_BSMs 
-
-
-# calculating event per tip -----------------------------------------------
-
-# Assuming 'resDEC' contains your original ML fit (which holds the tree)
-# and 'ana_events_tables' contains your BSM anagenetic results.
-
-tip_labels <- tree_pruned$tip.label
-num_sims <- length(ana_events_tables)
-
-# Create a master dataframe to store the results
-tip_events_summary <- 
-  data.frame(
-    tip = tip_labels,
-    mean_dispersals = NA,
-    mean_extirpations = NA,
-    mean_vicariance = NA,
-    mean_simpatry = NA,
-    stringsAsFactors = FALSE
-  )
-
-# Loop through each tip to calculate its unique historical pathway
-for(i in 1:length(tip_labels)) {
-  # i = 1
-  tip_node = i
-  
-  # Get all ancestral nodes leading from the root to this specific tip
-  # nodepath() from 'ape' gives the sequence of nodes from root to tip
-  root_node <- length(tree_pruned$tip.label) + 1
-  path_nodes <- nodepath(tree_pruned, from = root_node, to = tip_node)
-  
-  # Accumulate event counts across all BSM simulation maps
-  total_dispersals_for_tip = 0
-  total_extirpations_for_tip = 0
-  
-  for(s in 1:num_sims) {
-    # s = 10
-    sim_table <- ana_events_tables[[s]]
-    
-    # In BioGeoBEARS ana_events_tables:
-    # 'brlen' tells us branch lengths, and we can match branches using edge matrix indices
-    # Or more directly, we can match rows where the 'headed_node' matches our path nodes
-    
-    # Filter the simulation table for branches that belong to this tip's lineage pathway
-    # Note: The root node itself doesn't have an incoming branch, so we look at the tip's ancestral path nodes excluding the root
-    lineage_branches <- sim_table[sim_table$node %in% path_nodes[-1], ]
-    
-    # Anagenetic events:
-    # Sum the events along this pathway for this specific simulation map
-    # 'd' and 'e' events are the standard naming for dispersal and extirpation respectively
-    total_dispersals_for_tip <- 
-      total_dispersals_for_tip + 
-      sum(lineage_branches$event_type == "d", na.rm = TRUE) 
-    total_extirpation_for_tip <- 
-      total_dispersals_for_tip + 
-      sum(lineage_branches$event_type == "e", na.rm = TRUE) 
-    # Note: If checking pure anagenetic columns, verify column names via colnames(sim_table)
-    # Frequently stored as specific event types depending on your BioGeoBEARS version:
-    # e.g., sum(lineage_branches$anagenetic_events == "dispersal")
-    
-    # Cladogenetic events:
-    # sum of the events along the species'pathway for a given specific bsm simulation
-    # "subset (s)" and "vicariance (v)" are the names for the events in the standard DEC model
-    # 
-    total_dispersals_for_tip <- 
-      total_dispersals_for_tip + 
-      sum(lineage_branches$event_type == "d", na.rm = TRUE) 
-    total_extirpation_for_tip <- 
-      total_dispersals_for_tip + 
-      sum(lineage_branches$event_type == "e", na.rm=TRUE) 
-  }
-  
-  # Calculate the average across all stochastic maps
-  tip_events_summary$mean_dispersals[i] <- 
-    total_dispersals_for_tip / length(lineage_branches$event_type)
-  tip_events_summary$mean_extirpations[i] <- 
-    total_extirpations_for_tip / length(lineage_branches$event_type)
-}
-
-# View your final per-tip breakdown
-print(tip_events_summary)
-
-# Using functions from Herodotools to insert nodes and calculate some historical metrics
-
-# assemblage age and in situ diversification ---------------------------------
-
-# prepare the insertions -------------------------------------------------------
-## get_insert_df ----
-
+# inserting anagenetic nodes -------------------------------------------------------
+# here we produce a list with anagenetic nodes in the tree
 insert_list <- 
   Herodotools::get_insert_df(
     bsm_res_DEC,
@@ -146,7 +45,7 @@ insert_list <-
   )
 
 
-# getting the ancestral range area for each node 
+# getting the ancestral range area for each node including anagenetic nodes
 list_node_area <- 
   Herodotools::get_bsm_node_area(
     bsm = bsm_res_DEC, 
@@ -157,9 +56,10 @@ list_node_area <-
   )
 
 # insert_nodes ----
+# here the anagenetic nodes are inserted in the tree
 
 bsm_tree <- insert_nodes(
-  tree =  phy_pruned, 
+  tree =  tree_pruned, 
   inserts = insert_list, 
   node_area = list_node_area)
 
@@ -171,12 +71,11 @@ bioregions_birds <- read.table(here::here("data", "matrixEco.txt"),
                                header = T)
 bioregions_birds2 <- data.frame(area = bioregions_birds[, 2])
 rownames(bioregions_birds2) <- bioregions_birds$ID
-test_rds <- readRDS(here::here("data", "processed", "grid_tyranidae.rds"))
 
 # one bsm just for testing
 PE_PD_insitu <- 
   Herodotools::calc_insitu_metrics(W = occ_birds, 
-                                   tree = phy_pruned, 
+                                   tree = tree_pruned, 
                                    ancestral.area = bsm_tree[[42]]$node_area, 
                                    biogeo = bioregions_birds2)
 # saving one output just for testing and downstream pipeline
