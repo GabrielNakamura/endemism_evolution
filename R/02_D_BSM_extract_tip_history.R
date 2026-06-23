@@ -85,42 +85,56 @@ saveRDS(PE_PD_insitu,
                    "PD_PE_insitu_one_bsm.rds")
         )
 
-# Running for the 50 BSM - parallel computation 
-
-# number of cores
-ncores <- parallel::detectCores() - 1 
-
 # subsetting trees
-bsm_tree_sub <- bsm_tree[1:50]
+bsm_tree_sub <- bsm_tree[1:3]
+
+# testing new function using only one realization of bsm
+system.time(
+  test_PD_PE <- 
+    calc_PD_PE_insitu(W = occ_birds, 
+                      tree = tree_pruned, 
+                      ancestral.area = bsm_tree[[42]]$node_area, 
+                      biogeo = bioregions_birds2)
+)
+
 
 # specifying the worker plan - multicore in this case
+# number of cores
+ncores <- parallel::detectCores() - 4 
 plan(multisession, workers = ncores)
+# Running for the 50 BSM - parallel computation 
 
-# using progress package to monitor the progress of calculation for each bsm
-with_progress({
 
-  p <- progressor(steps = length(bsm_tree_sub))
-  
-  list_PE_PD_res <- 
-    future_map(bsm_tree_sub, function(x){
-      # phylogenetic tree
-      tree <- x$phylo
-      # ancestral area
-      anc_area <- x$node_area
-      # PE and PD calculation 
-      res_PE_PD <- 
-        Herodotools::calc_insitu_metrics(W = occ_birds, 
-                                         tree = tree, 
-                                         ancestral.area = anc_area, 
-                                         biogeo = bioregions_birds2) 
-      p() # progress bar
-      return(res_PE_PD) # output
-    }) # future worker
-}) # progress counter
+# testing progress with future lapply
+progressr::with_progress({
+  p <- progressr::progressor(steps = length(bsm_tree_sub))
+  group_perm <- 
+      future.apply::future_lapply(bsm_tree_sub, function(x) {
+        res_PE_PD <- 
+          calc_PD_PE_insitu(W = occ_birds, 
+                            tree = x$phylo, 
+                            ancestral.area = x$node_area, 
+                            biogeo = bioregions_birds2) 
+        
+        # update progress
+        p(message = sprintf("max.nclust=%s perm=%s", x))
+        return(res_PE_PD)
+      }, future.seed=TRUE)
+})
 
-# end of multisession plan
 plan(sequential)
 
+# using for
+pb = txtProgressBar(min = 0, max = length(bsm_tree), initial = 0) 
+res_all_bsm_PE <- vector(mode = "list", length = length(bsm_tree))
+for(i in 1:length(bsm_tree)){
+  res_all_bsm_PE[[i]] <- 
+    calc_PD_PE_insitu(W = occ_birds, 
+                      tree = tree_pruned, 
+                      ancestral.area = bsm_tree[[i]]$node_area, 
+                      biogeo = bioregions_birds2)
+  setTxtProgressBar(pb,i)
+}
 
 
 
