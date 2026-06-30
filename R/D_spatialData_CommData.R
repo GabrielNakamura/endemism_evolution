@@ -8,14 +8,20 @@ source(here::here("R", "functions", "GridFilter.R"))
 #######################################
 #### SHAPE America
 # Load shapefile
+shape_america <- sf::st_read(here::here("data", "shape_america2.shp"))
 shape.america <- readOGR(here::here("data", "shape_america2.shp"))
 shape.america
 plot(shape.america)
 
 #######################################
 #### GRID
+grid_full <- st_make_grid(shape_america, cellsize = c(1, 1))
 gridded <- GridFilter(shape.america, resol=1.0, prop=0.3)
-saveRDS(object = gridded, file = here::here("data", "processed", "grid_tyranidae.rds"))
+grid_sa <- st_as_sf(grid_full)
+grid_sa <- grid_sa[st_intersects(grid_sa, shape_america, sparse = FALSE), ]
+saveRDS(object = gridded, file = here::here("data",
+                                            "processed",
+                                            "grid_tyranidae.rds"))
 plot(gridded)
 gridded
 #str(gridded)
@@ -34,6 +40,7 @@ gridded$ID
 #######################################
 #### SHAPE Species
 # load shapefiles
+birds<-readOGR(here::here("data", "shapes_tiranideos.shp"))
 birds<-readOGR("shapes_tiranideos.shp")
 birds
 summary(birds)

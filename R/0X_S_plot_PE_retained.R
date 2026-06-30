@@ -1,14 +1,16 @@
 
-library(dplyr)
-library(sf)
 library(ggplot2)
 library(rcartocolor)
-
+library(Herodotools)
+library(tidyverse)
+library(sf)
+library(terra)
+library(rnaturalearth) # Modern replacement for rnaturalearthdata
+library(rcartocolor)
 # PE biogeographic reconstruction 
 
 # coordinates
 coords <- read.table(here::here("data", "coords.txt"), header = TRUE, sep = ";")
-coords_2 <- data.frame(coords, grids = rownames(coords))
 
 # bsm results
 res_PE_one <- 
@@ -23,103 +25,198 @@ bioregions_birds2 <- data.frame(area = bioregions_birds[, 2])
 rownames(bioregions_birds2) <- bioregions_birds$ID
 
 # adding grid ID
-res_PE_one1 <- data.frame(res_PE_one, grids = as.character(bioregions_birds$ID))
-res_PE_one_2 <- 
-  res_PE_one1 |> 
-  left_join(coords_2, by = c(grids = "grids"))
+res_PE_one1 <- data.frame(res_PE_one, grids = as.character(rownames(occ_birds)))
 
-# removing grids with lat and long NA
-res_PE_one_3 <- 
-  res_PE_one_2 |> 
-  filter(!is.na(LAT))
 
-AS_sf <- read_sf(
-  here::here("data",  
-             "shape_america2.shp"))
+# plotting maps -----------------------------------------------------------
 
-# transforming data frame into a spatial data frame
-evo_metrics_sf <- st_as_sf(
-  res_PE_one_3,
-  coords = c("LON","LAT"), 
-  crs = st_crs(AS_sf)
-)
+# creating limits to the maps
 
-evo_metrics_AS <- st_filter(evo_metrics_sf, AS_sf)
-site_xy_AS <- st_coordinates(evo_metrics_AS$geometry)
-
-# just changing LON and LAT to x and y for simplicity and placing it before PE column
-evo_metrics_AS_2 <- 
-  evo_metrics_AS |> 
-  mutate(
-    x = site_xy_AS[,1],
-    y = site_xy_AS[,2],
-    .before = PE
-  )
-
-cont_cols <- rcartocolor::carto_pal(8, "Sunset")
-
-map_PE <- 
-  evo_metrics_AS_2 |> 
-  ggplot() + 
-  geom_tile(aes(x = x, y = y, fill = PEinsitu)) +
- # scale_fill_stepsn(
-  #  breaks = seq(0, 17, 3),
-  # limits = c(0, 17),
-  #  name = "PE retained" ,
-  # colours = cont_cols
-  #) +
-  labs(title = "Phylogenetic endemism") 
-
-coastline <- rnaturalearth::ne_coastline(returnclass = "sf")
 map_limits <- list(
-  x = c(-95, -30),
-  y = c(-55, 12)
+  x = c(-170.2166, -13.21288),  # Longitude limits (xmin, xmax)
+  y = c(-55.37714, 83.6236)     # Latitude limits (ymin, ymax)
 )
 
-map_PE <- 
-  res_PE_one_3 |> 
-  ggplot2::ggplot() + 
-  ggplot2::geom_raster(ggplot2::aes(x = LON, y = LAT, fill = PEinsitu)) + 
-  rcartocolor::scale_fill_carto_c(name = "PE", 
-                                  type = "quantitative", 
-                                  palette = "SunsetDark") +
-  ggplot2::geom_sf(data = coastline) +
-  ggplot2::coord_sf(xlim = map_limits$x, ylim = map_limits$y) +
-  ggplot2::ggtitle("") +
-  ggplot2::xlab("Longitude") +
-  ggplot2::ylab("Latitude") +
-  ggplot2::labs(fill = "PE") +
-  ggplot2::theme_bw() +
-  ggplot2::theme(
-    plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "mm"),
-    legend.text = element_text(size = 12), 
-    axis.text = element_text(size = 7),
-    axis.title.x = element_text(size = 11),
-    axis.title.y = element_text(size = 11)
+# Spatializing the results
+
+# Load data PEinsitu
+
+
+# 2. Spatial Objects --------------------------------------------------
+
+# sf coastline layer
+coastline <- rnaturalearth::ne_coastline(scale = 50, returnclass = "sf")
+
+
+# test 2 ------------------------------------------------------------------
+
+# 3. Grid Matching & Data Preparation ----------------------------------------
+
+# Initialize a blank raster for Americas
+r_pe <- terra::rast(
+  xmin = -170.2166, xmax = -13.21288, 
+  ymin = -55.37714, ymax = 83.6236, 
+  res = 1.0, 
+  crs = "EPSG:4326",
+  nlyr = 2                # Define 2 layers up front
+)
+names(r_pe) <- c("PEinsitu", "PE")
+
+# Find the exact cell numbers for your coordinates
+cells <- terra::cellFromXY(r_pe, coords[as.numeric(res_PE_one1$grids), ])
+
+# Assign the PEinsitu values directly to those specific cells
+values_to_assign <- res_PE_one1[, c("PEinsitu", "PE")]
+r_pe[cells] <- values_to_assign
+
+
+# Convert the raster grids into vector polygons so ggplot treats them natively
+map_data_sf <- terra::as.polygons(r_pe, aggregate = FALSE) %>% 
+  sf::st_as_sf()
+
+
+
+# Map ---------------------------------------------------------------------
+
+# 1. Calculate the spatial bounding box of ONLY your grid data
+# This extracts the exact bounding polygon from the data you actually have
+data_bbox <- sf::st_as_sfc(sf::st_bbox(map_data_sf))
+
+# 2. Crop the coastline down to this data boundary
+# This structurally deletes Africa and all distant small islands 
+coastline_cropped <- sf::st_intersection(coastline, data_bbox)
+
+# 3. Create dynamic map limits based tightly on your actual data
+# This eliminates unnecessary white space
+tight_bbox <- sf::st_bbox(map_data_sf)
+map_limits_tight <- list(
+  x = c(tight_bbox["xmin"], tight_bbox["xmax"]),
+  y = c(tight_bbox["ymin"], tight_bbox["ymax"])
+)
+
+# Define the projection
+equal_area_crs <- "+proj=cea +lon_0=-90 +lat_ts=30 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
+
+# 4. Generate the clean figure
+p_PE <- ggplot() +  
+  # Plot the grid cells first
+  geom_sf(data = map_data_sf, aes(fill = PE), color = NA) +  
+  
+  # Plot ONLY the cropped coastline on top
+  geom_sf(data = coastline_cropped, fill = NA, color = "gray30", size = 0.3, inherit.aes = FALSE) +
+  
+  rcartocolor::scale_fill_carto_c(
+    name = "Endemismo atual", 
+    type = "quantitative", 
+    palette = "SunsetDark",
+    na.value = "transparent",
+    guide = guide_colorbar(
+      title.position = "top",   
+      title.hjust = 0.5,        
+      barwidth = unit(8, "cm"), 
+      barheight = unit(0.3, "cm") 
+    )
+  ) +
+  
+  # Crop using the tight coordinates to drop blank spaces completely
+  coord_sf(
+    xlim = map_limits_tight$x, 
+    ylim = map_limits_tight$y, 
+    default_crs = sf::st_crs(4326), 
+    crs = equal_area_crs,           
+    expand = FALSE
+  ) +
+  
+  labs(x = NULL, y = NULL) + 
+  
+  theme_minimal() + 
+  theme(
+    plot.margin = unit(c(1, 1, 1, 1), "mm"),
+    
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.border = element_blank(),
+    
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 11, face = "bold")
   )
 
+# Save the plot
+ggsave(
+  filename = here::here("Figures", "PE_atual.png"),
+  plot = p_PE,
+  width = 14, 
+  height = 14, 
+  units = "cm", 
+  dpi = 500
+)
 
-library(sf)
-library(terra)
-library(tidyterra)
-library(ggplot2)
+p <- ggplot() +  
+  # Plot the grid cells first
+  geom_sf(data = map_data_sf, aes(fill = PEinsitu), color = NA) +  
+  
+  # Plot ONLY the cropped coastline on top
+  geom_sf(data = coastline_cropped, fill = NA, color = "gray30", size = 0.3, inherit.aes = FALSE) +
+  
+  rcartocolor::scale_fill_carto_c(
+    name = "Endemismo - manutenção de área", 
+    type = "quantitative", 
+    palette = "SunsetDark",
+    na.value = "transparent",
+    guide = guide_colorbar(
+      title.position = "top",   
+      title.hjust = 0.5,        
+      barwidth = unit(8, "cm"), 
+      barheight = unit(0.3, "cm") 
+    )
+  ) +
+  
+  # Crop using the tight coordinates to drop blank spaces completely
+  coord_sf(
+    xlim = map_limits_tight$x, 
+    ylim = map_limits_tight$y, 
+    default_crs = sf::st_crs(4326), 
+    crs = equal_area_crs,           
+    expand = FALSE
+  ) +
+  
+  labs(x = NULL, y = NULL) + 
+  
+  theme_minimal() + 
+  theme(
+    plot.margin = unit(c(1, 1, 1, 1), "mm"),
+    
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.border = element_blank(),
+    
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 11, face = "bold")
+  )
 
-# 1. Convert sf object to a spatVector
-sf_vector <- vect(evo_metrics_AS_2)
-
-# 2. Extract your original data's spatial resolution
-# (Finds the true spacing between coordinates along the X axis)
-coords <- st_coordinates(evo_metrics_AS_2)
-detected_res <- min(diff(sort(unique(coords[, "X"]))))
-
-# 3. Create a clean grid template matching that exact resolution
-template <- rast(sf_vector, res = detected_res)
-
-# 4. Burn your data into the true raster grid structure
-map_raster <- rasterize(sf_vector, template, field = "PEinsitu")
-
-# 5. Plot instantly using tidyterra's specialized raster layer
-ggplot() +
-  geom_spatraster(data = map_raster, aes(fill = your_variable_column)) +
-  scale_fill_viridis_c(na.value = "transparent") +
-  theme_minimal()
+ggsave(
+  filename = here::here("Figures", "PEinsitu_bsm1.png"),
+  plot = p,
+  width = 14, 
+  height = 14, 
+  units = "cm", 
+  dpi = 500
+)

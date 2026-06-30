@@ -133,8 +133,10 @@ for(i in 1:length(bsm_tree)){
                       tree = tree_pruned, 
                       ancestral.area = bsm_tree[[i]]$node_area, 
                       biogeo = bioregions_birds2)
-  setTxtProgressBar(pb,i)
+  setTxtProgressBar(pb, i)
 }
 
+# saving results with 100 trees
 
+saveRDS(res_all_bsm_PE , here::here("output", "PE_PD_insitu", "list_bsm_PE.rds"))
 
